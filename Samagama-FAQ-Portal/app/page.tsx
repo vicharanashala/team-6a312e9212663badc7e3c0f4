@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import Fuse from "fuse.js";
 import Header from "@/components/Header";
@@ -8,20 +8,43 @@ import SearchBar from "@/components/SearchBar";
 import CategoryFilter from "@/components/CategoryFilter";
 import FAQCard from "@/components/FAQCard";
 import YakshaChat from "@/components/YakshaChat";
-import { faqData, categories } from "@/data/faqData";
+import { faqData as staticFaqData, categories as staticCategories, type FAQ, type Category } from "@/data/faqData";
 import { BookOpen, TrendingUp, Users } from "lucide-react";
 
-const fuse = new Fuse(faqData, {
-  keys: [
-    { name: "question", weight: 0.5 },
-    { name: "answer", weight: 0.3 },
-    { name: "tags", weight: 0.2 },
-  ],
-  threshold: 0.35,
-  includeScore: true,
-});
-
 export default function FAQPage() {
+  const [faqData, setFaqData] = useState<FAQ[]>(staticFaqData);
+  const [categories, setCategories] = useState<Category[]>(staticCategories);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch("/api/faqs");
+        const data = await res.json();
+        if (data.ok && data.faqs.length > 0) {
+          setFaqData(data.faqs);
+          setCategories(data.categories);
+        }
+      } catch {
+        // Fall back to static data if DB is unavailable
+      }
+    };
+    void load();
+  }, []);
+
+  const liveFuse = useMemo(
+    () =>
+      new Fuse(faqData, {
+        keys: [
+          { name: "question", weight: 0.5 },
+          { name: "answer", weight: 0.3 },
+          { name: "tags", weight: 0.2 },
+        ],
+        threshold: 0.35,
+        includeScore: true,
+      }),
+    [faqData]
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [openFAQs, setOpenFAQs] = useState<Set<string>>(new Set());
@@ -30,7 +53,7 @@ export default function FAQPage() {
     let results = faqData;
 
     if (searchQuery.trim()) {
-      const fuseResults = fuse.search(searchQuery);
+      const fuseResults = liveFuse.search(searchQuery);
       results = fuseResults.map((r) => r.item);
     }
 
@@ -39,7 +62,7 @@ export default function FAQPage() {
     }
 
     return results;
-  }, [searchQuery, selectedCategory]);
+  }, [faqData, searchQuery, selectedCategory, liveFuse]);
 
   const toggleFAQ = useCallback((id: string) => {
     setOpenFAQs((prev) => {

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Bot, User, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { faqData } from "@/data/faqData";
+import { faqData as staticFaqData, type FAQ } from "@/data/faqData";
 import Fuse from "fuse.js";
 
 interface Message {
@@ -15,13 +15,10 @@ interface Message {
   sources?: string[];
 }
 
-const fuse = new Fuse(faqData, {
-  keys: ["question", "answer", "tags"],
-  threshold: 0.4,
-  includeScore: true,
-});
-
-function generateAnswer(query: string): { answer: string; sources: string[] } {
+function buildAnswer(
+  query: string,
+  fuse: Fuse<FAQ>
+): { answer: string; sources: string[] } {
   const results = fuse.search(query);
 
   if (results.length === 0) {
@@ -52,6 +49,7 @@ function generateAnswer(query: string): { answer: string; sources: string[] } {
 
 export default function YakshaChat() {
   const [isOpen, setIsOpen] = useState(false);
+  const [faqData, setFaqData] = useState<FAQ[]>(staticFaqData);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -65,9 +63,34 @@ export default function YakshaChat() {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const fuse = useMemo(
+    () =>
+      new Fuse(faqData, {
+        keys: ["question", "answer", "tags"],
+        threshold: 0.4,
+        includeScore: true,
+      }),
+    [faqData]
+  );
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch("/api/faqs");
+        const data = await res.json();
+        if (data.ok && data.faqs.length > 0) {
+          setFaqData(data.faqs);
+        }
+      } catch {
+        // Fall back to static data
+      }
+    };
+    void load();
+  }, []);
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -85,7 +108,7 @@ export default function YakshaChat() {
 
     // Simulate AI thinking delay
     setTimeout(() => {
-      const { answer, sources } = generateAnswer(userMessage.content);
+      const { answer, sources } = buildAnswer(userMessage.content, fuse);
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",

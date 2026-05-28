@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
-import { faqData, categories } from "@/data/faqData";
+import { faqData as staticFaqData, categories as staticCategories, type FAQ, type Category } from "@/data/faqData";
 import Fuse from "fuse.js";
 import {
   Send,
@@ -16,13 +16,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const fuse = new Fuse(faqData, {
-  keys: ["question", "answer", "tags"],
-  threshold: 0.4,
-  includeScore: true,
-});
-
 export default function AskPage() {
+  const [faqData, setFaqData] = useState<FAQ[]>(staticFaqData);
+  const [categories, setCategories] = useState<Category[]>(staticCategories);
   const [question, setQuestion] = useState("");
   const [category, setCategory] = useState("");
   const [email, setEmail] = useState("");
@@ -31,11 +27,37 @@ export default function AskPage() {
   const [submitError, setSubmitError] = useState("");
   const [priority, setPriority] = useState<"normal" | "urgent">("normal");
 
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch("/api/faqs");
+        const data = await res.json();
+        if (data.ok && data.faqs.length > 0) {
+          setFaqData(data.faqs);
+          setCategories(data.categories);
+        }
+      } catch {
+        // Fall back to static data
+      }
+    };
+    void load();
+  }, []);
+
+  const fuse = useMemo(
+    () =>
+      new Fuse(faqData, {
+        keys: ["question", "answer", "tags"],
+        threshold: 0.4,
+        includeScore: true,
+      }),
+    [faqData]
+  );
+
   // Real-time duplicate detection
   const suggestions = useMemo(() => {
     if (question.length < 5) return [];
     return fuse.search(question).slice(0, 3);
-  }, [question]);
+  }, [question, fuse]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
