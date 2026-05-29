@@ -19,8 +19,8 @@
  */
 import { MongoClient, ServerApiVersion } from 'mongodb';
 
-// Replace the placeholder with your Atlas connection string
-const uri = 'mongodb+srv://admin:lordTejashvi7@cluster0.6sd2h.mongodb.net/?appName=Cluster0';
+const uri = process.env.MONGODB_URI;
+if (!uri) throw new Error("MONGODB_URI is not set in environment variables");
 
 declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;

@@ -1,63 +1,81 @@
 /**
  * app/api/faqs/route.ts
  *
- *   GET /api/faqs   — returns all published FAQs and categories
+ *   GET /api/faqs              — returns all published FAQs and categories
+ *   GET /api/faqs?categoryId=3 — returns FAQs filtered by categoryId
  *
- * Serves the FAQ corpus from MongoDB (faqs + categories collections)
- * in the exact shape that the frontend expects from src/data/faqData.ts:
- *   FAQ  → { id, question, answer, category, categoryId, tags,
- *            helpful, notHelpful, lastUpdated }
- *   Category → { id, name, icon, description, count }
+ * Uses the native MongoDB driver (ConnectDB from mongoClient.ts) to query
+ * the `faqs` and `categories` collections in the `samagama` database.
  *
- * The FAQ page (/), Ask page duplicate detection, and YakshaChat all
- * currently import from the static faqData.ts — after this route is
- * live those can be switched to fetch from here.
+ * Response shape:
+ *   {
+ *     ok: true,
+ *     faqs: FAQ[],
+ *     categories: Category[]
+ *   }
+ *
+ * FAQ document schema (from DB):
+ *   { id, question, answer, category, categoryId, tags, helpful, notHelpful, lastUpdated, isPublished }
+ *
+ * Category document schema (from DB):
+ *   { id, name, icon, description, count }
  */
 
 import type { NextRequest } from "next/server";
-import { connectDB } from "@/lib/mongodb";
+import ConnectDB from "@/lib/mongoClient";
 import { ok, errors } from "@/lib/api";
+
+const DB_NAME = process.env.MONGODB_DB ?? "RAG_Project";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const categoryId = sp.get("categoryId");
 
+  let client;
   try {
-    await connectDB();
+    client = await ConnectDB();
   } catch {
     return errors.server("Could not connect to database");
   }
 
-  const { FAQ, Category } = await import("@/models");
+  try {
+    const db = client.db(DB_NAME);
 
-  const query: Record<string, unknown> = { isPublished: true };
-  if (categoryId) query.categoryId = Number(categoryId);
+    // Build filter — only return published FAQs
+    const faqFilter: Record<string, unknown> = { isPublished: { $ne: false } };
+    if (categoryId) faqFilter.categoryId = Number(categoryId);
 
-  const [faqs, categories] = await Promise.all([
-    FAQ.find(query)
-      .sort({ categoryId: 1, id: 1 })
-      .lean(),
-    Category.find().sort({ id: 1 }).lean(),
-  ]);
+    const [faqs, categories] = await Promise.all([
+      db
+        .collection("faqs")
+        .find(faqFilter)
+        .sort({ categoryId: 1, id: 1 })
+        .toArray(),
+      db.collection("categories").find({}).sort({ id: 1 }).toArray(),
+    ]);
 
-  return ok({
-    faqs: faqs.map((f) => ({
-      id: f.id,
-      question: f.question,
-      answer: f.answer,
-      category: f.category,
-      categoryId: f.categoryId,
-      tags: f.tags ?? [],
-      helpful: f.helpful ?? 0,
-      notHelpful: f.notHelpful ?? 0,
-      lastUpdated: f.lastUpdated,
-    })),
-    categories: categories.map((c) => ({
-      id: c.id,
-      name: c.name,
-      icon: c.icon,
-      description: c.description ?? "",
-      count: c.count ?? 0,
-    })),
-  });
+    return ok({
+      faqs: faqs.map((f) => ({
+        id: f.id as string,
+        question: f.question as string,
+        answer: f.answer as string,
+        category: f.category as string,
+        categoryId: f.categoryId as number,
+        tags: (f.tags as string[]) ?? [],
+        helpful: (f.helpful as number) ?? 0,
+        notHelpful: (f.notHelpful as number) ?? 0,
+        lastUpdated: f.lastUpdated as string,
+      })),
+      categories: categories.map((c) => ({
+        id: c.id as number,
+        name: c.name as string,
+        icon: c.icon as string,
+        description: (c.description as string) ?? "",
+        count: (c.count as number) ?? 0,
+      })),
+    });
+  } catch (err) {
+    console.error("[/api/faqs] Query failed:", err);
+    return errors.server("Failed to fetch FAQs from database");
+  }
 }

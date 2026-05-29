@@ -1,78 +1,43 @@
 /**
  * src/lib/db/seed.ts
  *
- * One-shot seed script — imports the static faqData.ts and upserts every
- * Category and FAQ document into MongoDB.
+ * One-shot seed script — imports static faqData.ts and inserts every
+ * Category and FAQ document into MongoDB (faqs + categories collections).
  *
  * Run with:
- *   npx tsx src/lib/db/seed.ts
+ *   npm run db:seed
  *
- * Safe to re-run: uses upsert (updateOne + upsert:true) so it won't
- * create duplicates.
+ * Safe to re-run: uses insertMany with { ordered: false } so duplicate
+ * key errors on re-runs are silently skipped.
  */
 
-import "dotenv/config"; // reads .env.local automatically via dotenv
-import mongoose from "mongoose";
+import "dotenv/config";
+import ConnectDB from "@/lib/mongoClient";
 import { faqData, categories } from "../../data/faqData";
-import Category from "../../models/Category";
-import FAQ from "../../models/FAQ";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  console.error("❌  MONGODB_URI is not set. Add it to .env.local");
-  process.exit(1);
-}
+const DB_NAME = process.env.MONGODB_DB ?? "samagama";
 
 async function seed() {
   console.log("🌱  Connecting to MongoDB…");
-  await mongoose.connect(MONGODB_URI!, { serverSelectionTimeoutMS: 10_000 });
+  const client = await ConnectDB();
   console.log("✅  Connected.");
 
-  // ── Seed Categories ──────────────────────────────────────────────────────
+  const db = client.db(DB_NAME);
+
   console.log(`\n📂  Seeding ${categories.length} categories…`);
-  for (const cat of categories) {
-    await Category.updateOne(
-      { categoryId: cat.id },
-      {
-        $set: {
-          categoryId: cat.id,
-          name: cat.name,
-          icon: cat.icon,
-          description: cat.description,
-          count: cat.count,
-        },
-      },
-      { upsert: true }
-    );
-  }
-  console.log("✅  Categories done.");
+  const catResult = await db.collection("categories").insertMany(categories, {
+    ordered: false,
+  });
+  console.log(`   ✅  ${catResult.insertedCount} categories inserted.`);
 
-  // ── Seed FAQs ────────────────────────────────────────────────────────────
   console.log(`\n📝  Seeding ${faqData.length} FAQs…`);
-  for (const faq of faqData) {
-    await FAQ.updateOne(
-      { faqId: faq.id },
-      {
-        $set: {
-          faqId: faq.id,
-          question: faq.question,
-          answer: faq.answer,
-          category: faq.category,
-          categoryId: faq.categoryId,
-          tags: faq.tags,
-          helpful: faq.helpful,
-          notHelpful: faq.notHelpful,
-          lastUpdated: faq.lastUpdated,
-          isPublished: true,
-        },
-      },
-      { upsert: true }
-    );
-  }
-  console.log("✅  FAQs done.");
+  const faqsWithPublished = faqData.map((faq) => ({ ...faq, isPublished: true }));
+  const faqResult = await db.collection("faqs").insertMany(faqsWithPublished, {
+    ordered: false,
+  });
+  console.log(`   ✅  ${faqResult.insertedCount} FAQs inserted.`);
 
-  await mongoose.disconnect();
+  await client.close();
   console.log("\n🎉  Seed complete. MongoDB disconnected.");
 }
 

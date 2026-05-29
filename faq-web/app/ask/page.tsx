@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
-import { faqData as staticFaqData, categories as staticCategories, type FAQ, type Category } from "@/data/faqData";
+import type { FAQ, Category } from "@/data/faqData";
 import Fuse from "fuse.js";
 import {
   Send,
@@ -17,8 +17,8 @@ import {
 import { cn } from "@/lib/utils";
 
 export default function AskPage() {
-  const [faqData, setFaqData] = useState<FAQ[]>(staticFaqData);
-  const [categories, setCategories] = useState<Category[]>(staticCategories);
+  const [faqData, setFaqData] = useState<FAQ[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [question, setQuestion] = useState("");
   const [category, setCategory] = useState("");
   const [email, setEmail] = useState("");
@@ -32,12 +32,12 @@ export default function AskPage() {
       try {
         const res = await fetch("/api/faqs");
         const data = await res.json();
-        if (data.ok && data.faqs.length > 0) {
-          setFaqData(data.faqs);
-          setCategories(data.categories);
+        if (data.ok) {
+          setFaqData(data.faqs ?? []);
+          setCategories(data.categories ?? []);
         }
-      } catch {
-        // Fall back to static data
+      } catch (err) {
+        console.error("[AskPage] Failed to load FAQs:", err);
       }
     };
     void load();

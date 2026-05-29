@@ -12,7 +12,6 @@ const navLinks = [
   { href: "/ask", label: "Ask", icon: MessageCircle },
   { href: "/threads", label: "Threads", icon: MessageSquare },
   { href: "/community", label: "Community", icon: User },
-  { href: "/ask", label: "Ask a Question", icon: MessageCircle },
   { href: "/resolve", label: "Resolve", icon: CheckCircle },
 ];
 
