@@ -8,6 +8,16 @@
  * src/lib/db/seedCommunity.ts. The reply is `$push`ed onto the document's
  * nested `replies` array, so it is persisted exactly like the seeded replies.
  *
+ * Flow:
+ *   1. Validate + `$push` the reply with status "pending".
+ *   2. Return { reply } (status "pending") immediately to the client.
+ *   3. After the response is sent (Next `after()`), POST the reply to the
+ *      FastAPI RAG service /validate-reply for malicious/malpractice
+ *      moderation, then write the verdict (status + moderation) back onto
+ *      the nested reply via arrayFilters.
+ *
+ * If the RAG service is unreachable, the reply is left "pending" (fail open).
+ *
  * Request body:
  *   { content: string, author?: string, authorRole?: "admin" | "mentor" | "user" }
  *
@@ -15,18 +25,28 @@
  *   { ok: true, reply: Reply }   (201 Created)
  *
  * Reply schema (stored in DB):
- *   { id, author, authorRole, content, timestamp, likes }
+ *   { id, author, authorRole, content, timestamp, likes,
+ *     status: "pending" | "approved" | "rejected",
+ *     moderation?: { reason, categories, model, reviewedAt } }
  */
 
 import { randomUUID } from "node:crypto";
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
+import type { UpdateFilter } from "mongodb";
 import ConnectDB from "@/lib/mongoClient";
 import { created, errors, readJson } from "@/lib/api";
+import { validateReply } from "@/lib/ai/ragClient";
 import type { Reply } from "@/lib/community/threadModel";
 
 const DB_NAME = process.env.MONGODB_DB ?? "samagama";
 const MAX_CONTENT_LENGTH = 4000;
 const ROLES = ["admin", "mentor", "user"] as const;
+
+interface ThreadDoc {
+  _id: string;
+  question: string;
+  replies: Reply[];
+}
 
 /** Format a Date as "YYYY-MM-DD HH:MM" to match the seeded reply timestamps. */
 function formatTimestamp(d: Date): string {
@@ -72,6 +92,7 @@ export async function POST(
     content,
     timestamp: formatTimestamp(new Date()),
     likes: 0,
+    status: "pending", // flipped to approved/rejected by RAG moderation
   };
 
   let client;
@@ -83,14 +104,58 @@ export async function POST(
 
   try {
     const db = client.db(DB_NAME);
-    // Typed collection so $push knows `replies` is an array and `_id` is a string.
-    const result = await db
-      .collection<{ _id: string; replies: Reply[] }>("community")
-      .updateOne({ _id: id }, { $push: { replies: reply } });
+    // Push the reply and grab the thread's question text for moderation context.
+    const thread = await db
+      .collection<ThreadDoc>("community")
+      .findOneAndUpdate(
+        { _id: id },
+        { $push: { replies: reply } },
+        { returnDocument: "before", projection: { question: 1 } }
+      );
 
-    if (result.matchedCount === 0) {
+    if (!thread) {
       return errors.notFound("Thread not found");
     }
+
+    // ── Moderate after the response is sent; write the verdict back to DB ────
+    after(async () => {
+      const verdict = await validateReply({
+        reply_id: reply.id,
+        thread_id: id,
+        content,
+        question: thread.question,
+      });
+
+      // Fail open: if the RAG service is down, leave the reply "pending".
+      if (!verdict) return;
+
+      try {
+        // Positional array update — dotted `$[r]` keys aren't expressible in
+        // the typed UpdateFilter, so build the $set and cast.
+        const update = {
+          $set: {
+            "replies.$[r].status": verdict.status,
+            "replies.$[r].moderation": {
+              reason: verdict.reason,
+              categories: verdict.categories,
+              model: verdict.model,
+              reviewedAt: new Date().toISOString(),
+            },
+          },
+        } as unknown as UpdateFilter<ThreadDoc>;
+
+        await db
+          .collection<ThreadDoc>("community")
+          .updateOne({ _id: id }, update, {
+            arrayFilters: [{ "r.id": reply.id }],
+          });
+      } catch (err) {
+        console.error(
+          `[replies] Failed to write moderation verdict for reply ${reply.id}:`,
+          err
+        );
+      }
+    });
 
     return created({ reply });
   } catch (err) {

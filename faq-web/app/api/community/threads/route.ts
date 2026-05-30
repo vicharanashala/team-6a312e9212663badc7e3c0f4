@@ -61,14 +61,19 @@ export async function GET(req: NextRequest) {
       resolvedAt: d.resolvedAt as string,
       views: (d.views as number) ?? 0,
       status: (d.status as "open" | "resolved") ?? "resolved",
-      replies: ((d.replies as Reply[]) ?? []).map((r) => ({
-        id: r.id,
-        author: r.author,
-        authorRole: r.authorRole,
-        content: r.content,
-        timestamp: r.timestamp,
-        likes: r.likes ?? 0,
-      })),
+      // Hide replies rejected by RAG moderation; pending/approved/legacy stay.
+      replies: ((d.replies as Reply[]) ?? [])
+        .filter((r) => r.status !== "rejected")
+        .map((r) => ({
+          id: r.id,
+          author: r.author,
+          authorRole: r.authorRole,
+          content: r.content,
+          timestamp: r.timestamp,
+          likes: r.likes ?? 0,
+          status: r.status,
+          moderation: r.moderation,
+        })),
     }));
 
     return ok({ threads });

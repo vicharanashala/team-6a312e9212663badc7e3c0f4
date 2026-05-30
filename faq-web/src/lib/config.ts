@@ -69,6 +69,7 @@ export const RAG_API_ROUTES = {
   QUERY: "/query",
   SEARCH: "/search",
   VALIDATE_QUESTION: "/validate-question",
+  VALIDATE_REPLY: "/validate-reply",
 } as const;
 
 export { publicConfig, serverConfig };

@@ -85,3 +85,73 @@ export async function validateQuestion(
     return null;
   }
 }
+
+/** Shape of the payload sent to FastAPI POST /validate-reply */
+export interface ValidateReplyPayload {
+  /** Reply id (the one stored in the thread's replies array) */
+  reply_id: string;
+  /** Thread (question) id the reply belongs to */
+  thread_id: string;
+  /** The reply text to moderate */
+  content: string;
+  /** The thread's question, sent for context (optional) */
+  question?: string;
+}
+
+/** Shape of the response from FastAPI POST /validate-reply */
+export interface RagReplyValidationResult {
+  reply_id: string;
+  thread_id: string;
+  /** "approved" | "rejected" */
+  status: "approved" | "rejected";
+  /** Human-readable reason for the decision */
+  reason: string;
+  /** Zero or more violation labels */
+  categories: string[];
+  /** Model / pipeline that made the decision */
+  model: string;
+}
+
+/**
+ * Call FastAPI's /validate-reply endpoint to moderate a community reply.
+ *
+ * Returns `null` on network/timeout/HTTP error so the caller can fail open
+ * (leave the reply "pending" for manual review rather than blocking it).
+ */
+export async function validateReply(
+  payload: ValidateReplyPayload
+): Promise<RagReplyValidationResult | null> {
+  const url = `${RAG_BASE}/validate-reply`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      console.error(
+        `[ragClient] /validate-reply returned ${res.status} for reply ${payload.reply_id}`
+      );
+      return null;
+    }
+
+    return (await res.json()) as RagReplyValidationResult;
+  } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      console.error(
+        `[ragClient] /validate-reply timed out for reply ${payload.reply_id}`
+      );
+    } else {
+      console.error(`[ragClient] /validate-reply error:`, err);
+    }
+    return null;
+  }
+}

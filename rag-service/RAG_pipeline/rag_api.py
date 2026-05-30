@@ -22,7 +22,9 @@ And gets back:
   }
 """
 
+import json
 import os
+import re
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -63,7 +65,7 @@ async def lifespan(app: FastAPI):
         chromadb.PersistentClient(
             path     = CHROMA_PATH,
             settings = Settings(anonymized_telemetry=False),
-        ).get_collection(COLLECTION_NAME)
+        ).get_or_create_collection(COLLECTION_NAME)
     )
     count = app_state["collection"].count()
     print(f"[OK] ChromaDB loaded - {count} chunks in '{COLLECTION_NAME}'")
@@ -107,6 +109,24 @@ class QueryResponse(BaseModel):
 
 class SearchResponse(BaseModel):
     results: list[SourceDoc]
+
+
+class ReplyValidationRequest(BaseModel):
+    """Sent by the Next.js backend after a reply is saved to MongoDB."""
+    reply_id:  str
+    thread_id: str
+    content:   str
+    question:  Optional[str] = None   # the thread's question, for context
+
+
+class ReplyValidationResponse(BaseModel):
+    """Moderation verdict returned to the Next.js backend."""
+    reply_id:   str
+    thread_id:  str
+    status:     str            # "approved" | "rejected"
+    reason:     str
+    categories: list[str]
+    model:      str
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -182,6 +202,78 @@ def generate_answer(prompt: str) -> str:
     )
     return response.text.strip()
 
+
+# Allowed violation labels the moderator may emit.
+MODERATION_CATEGORIES = [
+    "harassment", "hate", "threats", "sexual", "violence", "self_harm",
+    "doxxing", "malware", "cheating", "plagiarism", "leak", "credentials",
+    "proctoring_bypass", "unofficial_group", "scam", "spam",
+]
+
+
+def _parse_json_verdict(text: str) -> dict:
+    """Extract the JSON object from an LLM response, tolerating ``` fences."""
+    cleaned = text.strip()
+    # Strip ```json ... ``` or ``` ... ``` fences if present.
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE)
+    # Fall back to the first {...} block if there is extra prose.
+    if not cleaned.startswith("{"):
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if match:
+            cleaned = match.group(0)
+    return json.loads(cleaned)
+
+
+def moderate_reply(content: str, question: Optional[str]) -> dict:
+    """
+    Classify a community reply for malicious content and academic malpractice
+    using Gemini. Returns {"status", "reason", "categories"}.
+    Raises on LLM / parsing failure so the caller can fail open (stay pending).
+    """
+    prompt = f"""You are a content-moderation classifier for the student community forum of the \
+Vicharanashala internship programme at IIT Ropar. Classify the REPLY below.
+
+Mark decision = "rejected" if the reply contains ANY of:
+- Malicious content: harassment, hate speech, threats, violence, sexual content, \
+self-harm encouragement, personal data / doxxing, or malware / hacking instructions.
+- Malpractice / academic dishonesty: sharing or soliciting exam/quiz answers, cheating, \
+plagiarism, leaking confidential or proprietary material, sharing account credentials, \
+or instructions to bypass ViBe proctoring.
+- Policy violations: soliciting or sharing links to UNOFFICIAL WhatsApp / Telegram / peer \
+groups (only official channels are allowed), scams, spam, or advertising.
+
+Otherwise decision = "approved".
+
+Respond with ONLY a JSON object (no markdown, no prose) in exactly this form:
+{{"decision": "approved" | "rejected", "reason": "<one short sentence>", "categories": ["<zero or more of: {', '.join(MODERATION_CATEGORIES)}>"]}}
+
+THREAD QUESTION: {question or "(not provided)"}
+REPLY: {content}
+JSON:"""
+
+    response = app_state["gemini"].models.generate_content(
+        model    = GENERATION_MODEL,
+        contents = prompt,
+        config   = types.GenerateContentConfig(
+            temperature       = 0.0,   # deterministic moderation
+            max_output_tokens = 256,
+        ),
+    )
+
+    verdict = _parse_json_verdict(response.text)
+
+    decision = str(verdict.get("decision", "")).lower()
+    status   = "rejected" if decision == "rejected" else "approved"
+    reason   = str(verdict.get("reason", "")).strip() or (
+        "Flagged by moderation" if status == "rejected" else "No issues detected"
+    )
+    raw_cats = verdict.get("categories") or []
+    categories = [
+        c for c in raw_cats
+        if isinstance(c, str) and c in MODERATION_CATEGORIES
+    ]
+    return {"status": status, "reason": reason, "categories": categories}
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -236,6 +328,36 @@ def rag_query(req: QueryRequest):
             ))
 
     return QueryResponse(answer=answer, sources=sources)
+
+
+@app.post("/validate-reply", response_model=ReplyValidationResponse)
+def validate_reply(req: ReplyValidationRequest):
+    """
+    Moderate a community reply for malicious content and malpractice.
+
+    Stateless: returns the verdict to the Next.js backend, which writes the
+    `status` + `moderation` fields back onto the nested reply in MongoDB.
+    """
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Reply content cannot be empty")
+
+    try:
+        result = moderate_reply(content, req.question)
+    except Exception as err:   # LLM / parse failure -> let caller stay "pending"
+        raise HTTPException(
+            status_code=502,
+            detail=f"Moderation failed: {err}",
+        )
+
+    return ReplyValidationResponse(
+        reply_id   = req.reply_id,
+        thread_id  = req.thread_id,
+        status     = result["status"],
+        reason     = result["reason"],
+        categories = result["categories"],
+        model      = GENERATION_MODEL,
+    )
 
 
 @app.get("/search", response_model=SearchResponse)
