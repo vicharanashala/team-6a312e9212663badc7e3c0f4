@@ -44,3 +44,7 @@ export type {
 export type { ICommunityQuestionSummary } from "./CommunityQuestionSummary";
 export type { ICommunityVote } from "./CommunityVote";
 export type { ICommunityReport, ReportReason } from "./CommunityReport";
+
+// ─── Admin user model ────────────────────────────────────────────────────────
+export { default as AdminUser } from "./AdminUser";
+export type { IAdminUser, AdminRole } from "./AdminUser";
