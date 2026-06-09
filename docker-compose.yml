@@ -1,0 +1,120 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CrowdSource FAQ — Docker Compose
+# ─────────────────────────────────────────────────────────────────────────────
+# Services: Frontend (Next.js), Backend (FastAPI + RAG), ChromaDB, MongoDB
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: crowdsource-faq
+
+services:
+  # ── Frontend: Next.js Application ──────────────────────────────────────────
+  frontend:
+    build:
+      context: ./faq-web
+      dockerfile: Dockerfile
+    container_name: cs-faq-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI}
+      - RAG_API=${RAG_API_URL}
+      - INSTITUTION_ID=${INSTITUTION_ID}
+      - COMMUNITY_ADMIN_KEY=${COMMUNITY_ADMIN_KEY}
+      - NEXT_TELEMETRY_DISABLED=1
+    depends_on:
+      backend:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ── Backend: FastAPI + RAG System ──────────────────────────────────────────
+  backend:
+    build:
+      context: ./rag-service/RAG_pipeline
+      dockerfile: Dockerfile
+    container_name: cs-faq-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MONGODB_URI=${MONGODB_URI}
+      - CHROMA_PATH=/data/chroma_db
+    volumes:
+      - chroma-data:/data
+    depends_on:
+      chromadb:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── ChromaDB: Vector Store ──────────────────────────────────────────────────
+  chromadb:
+    image: chromadb/chroma:0.5.15
+    container_name: cs-faq-chromadb
+    ports:
+      - "${CHROMADB_PORT:-8001}:8000"
+    volumes:
+      - chroma-data:/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── MongoDB: Document Database ──────────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0.5
+    container_name: cs-faq-mongodb
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    volumes:
+      - mongodb-data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD}
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ── Named Volumes ──────────────────────────────────────────────────────────────
+volumes:
+  chroma-data:
+    name: cs-faq-chroma-data
+  mongodb-data:
+    name: cs-faq-mongodb-data
+
+# ── Shared Network ─────────────────────────────────────────────────────────────
+networks:
+  app-network:
+    name: cs-faq-network
+    driver: bridge
