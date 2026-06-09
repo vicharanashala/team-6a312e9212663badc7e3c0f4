@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
+import ManualFAQForm from "../resolve/ManualFAQForm";
+import ResolveAssistant from "../resolve/ResolveAssistant";
 
 interface PendingQuestion {
   id: string;
@@ -52,7 +54,7 @@ export default function AdminPage() {
   const [answer, setAnswer] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "urgent">("all");
   const [submitting, setSubmitting] = useState(false);
-  const [tab, setTab] = useState<"questions" | "faq_suggestions">("questions");
+  const [tab, setTab] = useState<"questions" | "faq_suggestions" | "manual_faq">("questions");
   const [promoteModalOpen, setPromoteModalOpen] = useState(false);
   const [promoteCategoryId, setPromoteCategoryId] = useState(1);
   const [promoteTags, setPromoteTags] = useState("");
@@ -289,6 +291,18 @@ export default function AdminPage() {
             <BookText size={14} />
             FAQ Suggestions
           </button>
+          <button
+            onClick={() => { setTab("manual_faq"); setSelectedQuestion(null); }}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              tab === "manual_faq"
+                ? "bg-accent text-background"
+                : "text-muted hover:text-foreground"
+            )}
+          >
+            <PlusCircle size={14} />
+            Manual FAQ
+          </button>
         </div>
 
         {/* Stats (questions tab only) */}
@@ -345,7 +359,7 @@ export default function AdminPage() {
         )}
 
         {/* Questions Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {tab !== "manual_faq" && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Question List */}
           <div className="space-y-3">
             {loading ? (
@@ -532,6 +546,18 @@ export default function AdminPage() {
               </motion.div>
             )}
           </AnimatePresence>
+        </div>}
+
+        {/* Manual FAQ Tab */}
+        {tab === "manual_faq" && (
+          <div className="max-w-2xl">
+            <ManualFAQForm />
+          </div>
+        )}
+
+        {/* Resolve Assistant */}
+        <div className="mt-10 pt-8 border-t border-border">
+          <ResolveAssistant />
         </div>
       </main>
 

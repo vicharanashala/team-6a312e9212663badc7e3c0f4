@@ -1,86 +1,93 @@
-import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import { FAQ, Category } from "@/models";
-import { withAuth } from "@/lib/adminMiddleware";
+import type { NextRequest } from "next/server";
+import ConnectDB from "@/lib/mongoClient";
+import { ok, errors, readJson } from "@/lib/api";
+import { isAdmin } from "@/lib/community/identity";
 
-export async function GET(req: NextRequest) {
-  const auth = await withAuth(req);
-  if (auth.error) return auth.error;
-
-  await connectDB();
-
-  const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get("page") || "1");
-  const limit = parseInt(searchParams.get("limit") || "10");
-  const search = searchParams.get("search") || "";
-  const category = searchParams.get("category") || "";
-  const status = searchParams.get("status") || "";
-  const skip = (page - 1) * limit;
-
-  const query: Record<string, unknown> = {};
-  if (search) {
-    query.$or = [
-      { question: { $regex: search, $options: "i" } },
-      { answer: { $regex: search, $options: "i" } },
-    ];
-  }
-  if (category) query.category = category;
-  if (status === "published") query.isPublished = true;
-  else if (status === "draft") query.isPublished = false;
-
-  const [faqs, total, categories] = await Promise.all([
-    FAQ.find(query)
-      .sort({ lastUpdated: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    FAQ.countDocuments(query),
-    Category.find().lean(),
-  ]);
-
-  return NextResponse.json({
-    faqs,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    categories,
-  });
-}
+const DB_NAME = process.env.MONGODB_DB ?? "samagama";
 
 export async function POST(req: NextRequest) {
-  const auth = await withAuth(req);
-  if (auth.error) return auth.error;
+  if (!isAdmin(req)) {
+    return errors.forbidden("Admin key required");
+  }
+
+  const body = await readJson<{
+    question?: string;
+    answer?: string;
+    category?: string;
+    tags?: string[];
+  }>(req);
+
+  if (!body?.question?.trim() || !body?.answer?.trim() || !body?.category?.trim()) {
+    return errors.badRequest("question, answer, and category are required");
+  }
+
+  const question = body.question.trim();
+  const answer = body.answer.trim();
+  const category = body.category.trim();
+  const tags = Array.isArray(body.tags)
+    ? body.tags.map((t) => t.trim()).filter(Boolean)
+    : [];
+
+  let client;
+  try {
+    client = await ConnectDB();
+  } catch (err) {
+    return errors.server("Could not connect to database");
+  }
 
   try {
-    const body = await req.json();
-    const { question, answer, category, categoryId, tags, isPublished } = body;
+    const db = client.db(DB_NAME);
 
-    if (!question || !answer || !category || !categoryId) {
-      return NextResponse.json(
-        { error: "Question, answer, category, and categoryId are required" },
-        { status: 400 }
-      );
+    // Find category to get categoryId
+    const categoryDoc = await db.collection("categories").findOne({ name: category });
+    if (!categoryDoc) {
+      return errors.badRequest(`Category '${category}' not found`);
     }
+    const categoryId = Number(categoryDoc.id);
 
-    await connectDB();
+    // Query existing FAQs under this categoryId to determine the next sequential ID suffix
+    const faqs = await db.collection("faqs").find({ categoryId }).toArray();
+    let maxSuffix = 0;
+    faqs.forEach((faq) => {
+      const parts = String(faq.id).split(".");
+      if (parts.length === 2) {
+        const suffix = parseInt(parts[1], 10);
+        if (!isNaN(suffix) && suffix > maxSuffix) {
+          maxSuffix = suffix;
+        }
+      }
+    });
 
-    const count = await FAQ.countDocuments();
-    const id = `${categoryId}.${count + 1}`;
+    const nextId = `${categoryId}.${maxSuffix + 1}`;
 
-    const faq = await FAQ.create({
-      id,
+    const newFaq = {
+      id: nextId,
       question,
       answer,
       category,
       categoryId,
-      tags: tags || [],
-      isPublished: isPublished ?? true,
-    });
+      tags,
+      helpful: 0,
+      notHelpful: 0,
+      lastUpdated: new Date().toISOString().split("T")[0],
+      isPublished: true,
+    };
 
-    return NextResponse.json({ faq }, { status: 201 });
-  } catch (error) {
-    console.error("Create FAQ error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+    // Insert the new FAQ
+    await db.collection("faqs").insertOne(newFaq);
+
+    // Increment count on corresponding category
+    await db.collection("categories").updateOne(
+      { id: categoryId },
+      { $inc: { count: 1 } }
     );
+
+    return ok({
+      message: "Manual FAQ created successfully",
+      faq: newFaq,
+    });
+  } catch (err: any) {
+    console.error("[POST /api/admin/faqs] Failed to create FAQ:", err);
+    return errors.server("Failed to save manual FAQ to database");
   }
 }
