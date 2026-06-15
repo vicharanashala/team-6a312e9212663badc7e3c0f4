@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   Bot,
   User as UserIcon,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
@@ -1314,6 +1315,91 @@ interface LiveFaq {
   version: number;
 }
 
+function FaqCard({
+  faq,
+  idx,
+  onEdit,
+  onDelete,
+  onPublish,
+  publishingId,
+}: {
+  faq: LiveFaq;
+  idx: number;
+  onEdit: (faq: LiveFaq) => void;
+  onDelete: (id: string) => void;
+  onPublish: (id: string) => void;
+  publishingId: string | null;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(idx * 0.03, 0.3) }}
+      className="rounded-xl border border-border bg-card p-4"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-accent/10 text-accent">
+              {faq.id}
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-muted/20 text-muted">
+              {faq.category}
+            </span>
+            <span className="text-xs text-muted">
+              v{faq.version}
+            </span>
+            {!faq.isPublished && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-500">
+                draft
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-medium leading-relaxed mb-1">
+            {faq.question}
+          </p>
+          <p className="text-xs text-muted line-clamp-2">
+            {faq.answer}
+          </p>
+          <p className="text-xs text-muted mt-1">
+            Updated: {faq.lastUpdated} | Tags: {faq.tags.length > 0 ? faq.tags.join(", ") : "none"}
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          {!faq.isPublished && (
+            <button
+              onClick={() => onPublish(faq.id)}
+              disabled={publishingId === faq.id}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-success/30 text-success hover:bg-success/10 transition-all disabled:opacity-50"
+            >
+              {publishingId === faq.id ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <CheckCircle size={12} />
+              )}
+              Publish
+            </button>
+          )}
+          <button
+            onClick={() => onEdit(faq)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-muted hover:text-foreground hover:border-muted transition-all"
+          >
+            <Pencil size={12} />
+            Edit
+          </button>
+          <button
+            onClick={() => onDelete(faq.id)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-danger/30 text-danger hover:bg-danger/10 transition-all"
+          >
+            <Trash2 size={12} />
+            Delete
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function LiveFaqstab() {
   const [faqs, setFaqs] = useState<LiveFaq[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1327,6 +1413,7 @@ function LiveFaqstab() {
     keywords: "",
   });
   const [saving, setSaving] = useState(false);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const loadFaqs = useCallback(async () => {
     setLoading(true);
@@ -1408,6 +1495,30 @@ function LiveFaqstab() {
     }
   };
 
+  const handlePublish = async (faqId: string) => {
+    setPublishingId(faqId);
+    try {
+      const res = await fetch(`/api/faqs/${faqId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublished: true }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success("FAQ published successfully");
+        setFaqs((prev) =>
+          prev.map((f) => (f.id === faqId ? { ...f, isPublished: true, version: data.faq.version } : f))
+        );
+      } else {
+        toast.error(data.error?.message ?? "Failed to publish FAQ");
+      }
+    } catch {
+      toast.error("Network error — could not publish FAQ");
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1458,7 +1569,7 @@ function LiveFaqstab() {
       </div>
 
       {/* FAQ List */}
-      <div className="space-y-3">
+      <div className="space-y-6">
         {loading ? (
           <div className="text-center py-16 text-muted text-sm">Loading FAQs...</div>
         ) : faqs.length === 0 ? (
@@ -1467,61 +1578,53 @@ function LiveFaqstab() {
             <p className="text-muted">No FAQs found.</p>
           </div>
         ) : (
-          faqs.map((faq, idx) => (
-            <motion.div
-              key={faq.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(idx * 0.03, 0.3) }}
-              className="rounded-xl border border-border bg-card p-4"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-accent/10 text-accent">
-                      {faq.id}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-muted/20 text-muted">
-                      {faq.category}
-                    </span>
-                    <span className="text-xs text-muted">
-                      v{faq.version}
-                    </span>
-                    {!faq.isPublished && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-500">
-                        draft
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm font-medium leading-relaxed mb-1">
-                    {faq.question}
-                  </p>
-                  <p className="text-xs text-muted line-clamp-2">
-                    {faq.answer}
-                  </p>
-                  <p className="text-xs text-muted mt-1">
-                    Updated: {faq.lastUpdated} | Tags: {faq.tags.length > 0 ? faq.tags.join(", ") : "none"}
-                  </p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => openEdit(faq)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-muted hover:text-foreground hover:border-muted transition-all"
-                  >
-                    <Pencil size={12} />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(faq.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-danger/30 text-danger hover:bg-danger/10 transition-all"
-                  >
-                    <Trash2 size={12} />
-                    Delete
-                  </button>
+          <>
+            {/* Unpublished (Drafts) */}
+            {faqs.filter((f) => !f.isPublished).length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-yellow-500 mb-3 flex items-center gap-2">
+                  <AlertCircle size={14} />
+                  Unpublished ({faqs.filter((f) => !f.isPublished).length})
+                </h3>
+                <div className="space-y-3">
+                  {faqs.filter((f) => !f.isPublished).map((faq, idx) => (
+                    <FaqCard
+                      key={faq.id}
+                      faq={faq}
+                      idx={idx}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                      onPublish={handlePublish}
+                      publishingId={publishingId}
+                    />
+                  ))}
                 </div>
               </div>
-            </motion.div>
-          ))
+            )}
+
+            {/* Published */}
+            {faqs.filter((f) => f.isPublished).length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-success mb-3 flex items-center gap-2">
+                  <CheckCircle size={14} />
+                  Published ({faqs.filter((f) => f.isPublished).length})
+                </h3>
+                <div className="space-y-3">
+                  {faqs.filter((f) => f.isPublished).map((faq, idx) => (
+                    <FaqCard
+                      key={faq.id}
+                      faq={faq}
+                      idx={idx}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                      onPublish={handlePublish}
+                      publishingId={publishingId}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
