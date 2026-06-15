@@ -1,0 +1,15 @@
+{
+  "theme": "Cursor Dark",
+  "ui_font_size": 14,
+  "project_panel": {
+    "dock": "left",
+    "git_status": true
+  },
+  "assistant": {
+    "dock": "right",
+    "default_width": 400
+  },
+  "terminal": {
+    "dock": "bottom"
+  }
+}

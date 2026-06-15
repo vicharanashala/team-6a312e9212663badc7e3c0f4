@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
 import ManualFAQForm from "../resolve/ManualFAQForm";
+import ResolveAssistant from "../resolve/ResolveAssistant";
 
 interface PendingQuestion {
   id: string;
@@ -358,7 +359,7 @@ export default function AdminPage() {
         )}
 
         {/* Questions Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {tab !== "manual_faq" && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Question List */}
           <div className="space-y-3">
             {loading ? (
@@ -545,13 +546,20 @@ export default function AdminPage() {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </div>}
 
+        {/* Manual FAQ Tab */}
         {tab === "manual_faq" && (
-          <div className="mt-6">
+          <div className="max-w-2xl">
             <ManualFAQForm />
           </div>
         )}
+
+        {/* Resolve Assistant */}
+        <div className="mt-10 pt-8 border-t border-border">
+          <ResolveAssistant />
+        </div>
+
       </main>
 
       {/* Promote to FAQ Modal */}
