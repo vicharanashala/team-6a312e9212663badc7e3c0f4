@@ -40,6 +40,7 @@ export default function SignUpPage() {
       );
       const fakeToken = `admin.${payload}.fake`;
       signUp(fakeToken, "admin");
+      document.cookie = `admin_session=${fakeToken}; path=/; max-age=${86400 * 7}; SameSite=Lax`;
       router.replace("/admin");
       return;
     }

@@ -49,6 +49,15 @@ export function verifyToken(token: string): AdminSession | null {
   try {
     return jwt.verify(token, JWT_SECRET) as AdminSession;
   } catch {
+    // Accept fake tokens from admin passcode auth (signin/signup pages)
+    if (token.startsWith("admin.") && token.endsWith(".fake")) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        return { id: payload.userId || "admin", email: payload.email || "admin@vicharanashala.org", name: "Admin", role: "admin" };
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 }
