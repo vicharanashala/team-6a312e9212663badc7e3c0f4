@@ -63,6 +63,7 @@ export default function AskPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
+    if (!category) { setSubmitError("Please select a category."); return; }
     setSubmitError("");
     setSubmitting(true);
 
@@ -239,7 +240,7 @@ export default function AskPage() {
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors appearance-none"
               >
-                <option value="">Select a category (optional)</option>
+                <option value="">Select a category *</option>
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.name}>
                     {cat.icon} {cat.name}
@@ -307,10 +308,10 @@ export default function AskPage() {
             {/* Submit */}
             <button
               type="submit"
-              disabled={!question.trim() || submitting}
+              disabled={!question.trim() || !category || submitting}
               className={cn(
                 "w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium text-sm transition-all",
-                question.trim() && !submitting
+                question.trim() && category && !submitting
                   ? "bg-accent text-background hover:bg-accent-hover shadow-lg shadow-accent/20"
                   : "bg-card text-muted border border-border cursor-not-allowed"
               )}

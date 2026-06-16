@@ -45,9 +45,8 @@ export async function POST(req: NextRequest) {
     return errors.badRequest("Question must be at most 2000 characters.");
 
   const category =
-    typeof body.category === "string" && body.category.trim()
-      ? body.category.trim()
-      : "General";
+    typeof body.category === "string" ? body.category.trim() : "";
+  if (!category) return errors.badRequest("Category is required.");
   const email =
     typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const priority =

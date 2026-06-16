@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  const publicPaths = ["/admin/login", "/api/admin/auth/login"];
+  if (pathname === "/admin/login") {
+    const url = new URL("/login", req.url);
+    return NextResponse.rewrite(url);
+  }
+
+  const publicPaths = ["/login", "/api/admin/auth/login"];
   if (publicPaths.some((path) => pathname.startsWith(path))) {
     return NextResponse.next();
   }
@@ -14,7 +19,7 @@ export function middleware(req: NextRequest) {
 
   const token = req.cookies.get("admin_session")?.value;
   if (!token) {
-    const loginUrl = new URL("/admin/login", req.url);
+    const loginUrl = new URL("/login", req.url);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -22,5 +27,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/login"],
 };

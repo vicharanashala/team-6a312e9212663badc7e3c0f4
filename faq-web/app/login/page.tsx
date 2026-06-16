@@ -6,17 +6,16 @@ import Link from "next/link";
 import AuthCard from "@/components/auth/AuthCard";
 import AuthInput from "@/components/auth/AuthInput";
 import { useAuth } from "@/context/AuthContext";
-import { Lock, Shield, Loader2 } from "lucide-react";
+import { Mail, Shield, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ADMIN_PASSCODE = "Vicharanashala-FAQ";
 
-export default function SignUpPage() {
+export default function LoginPage() {
   const router = useRouter();
-  const { signUp } = useAuth();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [passcode, setPasscode] = useState("");
   const [role, setRole] = useState<"user" | "admin">("user");
   const [loading, setLoading] = useState(false);
@@ -25,10 +24,12 @@ export default function SignUpPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     if (role === "admin") {
       if (passcode !== ADMIN_PASSCODE) {
         setError("Invalid Admin Passcode");
+        setLoading(false);
         return;
       }
       const payload = btoa(
@@ -39,25 +40,15 @@ export default function SignUpPage() {
         })
       );
       const fakeToken = `admin.${payload}.fake`;
-      signUp(fakeToken, "admin");
       document.cookie = `admin_session=${fakeToken}; path=/; max-age=${86400 * 7}; SameSite=Lax`;
+      signIn(fakeToken, "admin");
       router.replace("/admin");
+      setLoading(false);
       return;
     }
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
-      return;
-    }
-
-    setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch("/api/auth/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -66,12 +57,12 @@ export default function SignUpPage() {
 
       if (!data || !data.ok) {
         setError(
-          data?.error?.message ?? "Sign up failed. Please try again."
+          data?.error?.message ?? "Sign in failed. Please try again."
         );
         return;
       }
 
-      signUp(data.token, role);
+      signIn(data.token, role);
       router.replace("/");
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -82,20 +73,30 @@ export default function SignUpPage() {
 
   return (
     <AuthCard
-      title={role === "admin" ? "Admin Registration" : "Create account"}
-      subtitle={role === "admin" ? "Enter the admin passcode to continue" : "Join the Samagama FAQ community"}
+      title={role === "admin" ? "Admin Access" : "Welcome back"}
+      subtitle={role === "admin" ? "Enter the admin passcode to continue" : "Sign in to your account to continue"}
       footer={
         <p className="text-sm text-muted">
-          Already have an account?{" "}
-          <Link href="/login" className="text-accent hover:text-accent-hover font-medium">
-            Sign in
-          </Link>
+          {role === "admin" ? (
+            <>Need a user account?{" "}
+              <button type="button" onClick={() => setRole("user")} className="text-accent hover:text-accent-hover font-medium">
+                Sign in as User
+              </button>
+            </>
+          ) : (
+            <>
+              Don&apos;t have an account?{" "}
+              <Link href="/auth/signup" className="text-accent hover:text-accent-hover font-medium">
+                Sign up
+              </Link>
+            </>
+          )}
         </p>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="block text-sm font-medium mb-2">Register as</label>
+          <label className="block text-sm font-medium mb-2">Login as</label>
           <div className="flex gap-2">
             <button
               type="button"
@@ -141,19 +142,9 @@ export default function SignUpPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder="Enter your password"
               required
-              autoComplete="new-password"
-            />
-
-            <AuthInput
-              label="Confirm Password"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Repeat your password"
-              required
-              autoComplete="new-password"
+              autoComplete="current-password"
             />
           </>
         ) : (
@@ -186,12 +177,12 @@ export default function SignUpPage() {
           {loading ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              Creating account…
+              {role === "admin" ? "Authenticating\u2026" : "Signing in\u2026"}
             </>
           ) : (
             <>
-              {role === "admin" ? <Shield size={16} /> : <Lock size={16} />}
-              {role === "admin" ? "Register as Admin" : "Create Account"}
+              {role === "admin" ? <Shield size={16} /> : <Mail size={16} />}
+              {role === "admin" ? "Login as Admin" : "Sign In"}
             </>
           )}
         </button>

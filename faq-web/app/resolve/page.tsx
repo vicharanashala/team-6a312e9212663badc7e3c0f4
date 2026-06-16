@@ -202,7 +202,7 @@ export default function ProfilePage() {
   // Auth guard — redirect when auth is resolved and there's no user.
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace("/auth/signin");
+      router.replace("/login");
     }
   }, [authLoading, user, router]);
 

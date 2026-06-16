@@ -31,8 +31,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categories } from "@/data/faqData";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import ManualFAQForm from "../resolve/ManualFAQForm";
-import ResolveAssistant from "../resolve/ResolveAssistant";
+
+
 interface PendingQuestion {
   id: string;
   question: string;
@@ -233,6 +235,16 @@ export default function AdminPage() {
   const urgentCount = questions.filter((q) => q.priority === "urgent" && q.status === "pending").length;
   const resolvedCount = questions.filter((q) => q.status === "resolved").length;
 
+  const categoryCounts = questions.reduce<Record<string, number>>((acc, q) => {
+    acc[q.category] = (acc[q.category] || 0) + 1;
+    return acc;
+  }, {});
+  const chartData = Object.entries(categoryCounts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
+  const PIE_COLORS = ["#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ef4444", "#06b6d4", "#84cc16", "#ec4899"];
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -355,6 +367,63 @@ export default function AdminPage() {
               </button>
             ))}
           </div>
+        )}
+
+        {/* Category Chart */}
+        {tab === "questions" && chartData.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 rounded-xl border border-border bg-card p-6"
+          >
+            <h3 className="text-sm font-semibold mb-4">Questions by Category</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={chartData}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#888" }} />
+                  <YAxis tick={{ fontSize: 11, fill: "#888" }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#1a1a1a",
+                      border: "1px solid #2a2a2a",
+                      borderRadius: 8,
+                      fontSize: 13,
+                    }}
+                  />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {chartData.map((_, idx) => (
+                      <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label={({ name, value }) => `${name}: ${value}`}
+                  >
+                    {chartData.map((_, idx) => (
+                      <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: "#1a1a1a",
+                      border: "1px solid #2a2a2a",
+                      borderRadius: 8,
+                      fontSize: 13,
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
         )}
 
         {/* Questions Grid */}
@@ -553,11 +622,6 @@ export default function AdminPage() {
             <ManualFAQForm />
           </div>
         )}
-
-        {/* Resolve Assistant */}
-        <div className="mt-10 pt-8 border-t border-border">
-          <ResolveAssistant />
-        </div>
 
       </main>
 

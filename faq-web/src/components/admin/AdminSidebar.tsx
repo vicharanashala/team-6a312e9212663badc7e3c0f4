@@ -78,7 +78,7 @@ export function AdminSidebar({ superAdminOnly = false }: AdminSidebarProps) {
       >
         <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border">
           {!collapsed && (
-            <span className="text-lg font-semibold text-sidebar-foreground">Admin Panel</span>
+            <span className="text-lg font-semibold text-sidebar-foreground">Vicharanashala</span>
           )}
           <Button
             variant="ghost"
