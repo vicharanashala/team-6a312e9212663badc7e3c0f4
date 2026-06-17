@@ -15,6 +15,8 @@ export async function POST(req: NextRequest) {
     answer?: string;
     category?: string;
     tags?: string[];
+    keywords?: string[];
+    isPublished?: boolean;
   }>(req);
 
   if (!body?.question?.trim() || !body?.answer?.trim() || !body?.category?.trim()) {
@@ -27,6 +29,10 @@ export async function POST(req: NextRequest) {
   const tags = Array.isArray(body.tags)
     ? body.tags.map((t) => t.trim()).filter(Boolean)
     : [];
+  const keywords = Array.isArray(body.keywords)
+    ? body.keywords.map((k) => k.trim()).filter(Boolean)
+    : [];
+  const isPublished = body.isPublished !== false;
 
   let client;
   try {
@@ -67,10 +73,12 @@ export async function POST(req: NextRequest) {
       category,
       categoryId,
       tags,
+      keywords,
       helpful: 0,
       notHelpful: 0,
       lastUpdated: new Date().toISOString().split("T")[0],
-      isPublished: true,
+      isPublished,
+      version: 1,
     };
 
     // Insert the new FAQ

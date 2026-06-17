@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
-import { PlusCircle, Loader2 } from "lucide-react";
+import { PlusCircle, Save, Loader2 } from "lucide-react";
 import type { Category } from "@/data/faqData";
 
 export default function ManualFAQForm() {
@@ -11,6 +11,7 @@ export default function ManualFAQForm() {
   const [answer, setAnswer] = useState("");
   const [category, setCategory] = useState("");
   const [tagsInput, setTagsInput] = useState("");
+  const [keywordsInput, setKeywordsInput] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -34,7 +35,7 @@ export default function ManualFAQForm() {
     void fetchCategories();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, isPublished = true) => {
     e.preventDefault();
     if (!question.trim() || !answer.trim() || !category) {
       toast.error("Please fill in all required fields (Question, Answer, and Category)");
@@ -46,6 +47,10 @@ export default function ManualFAQForm() {
       .split(",")
       .map((tag) => tag.trim())
       .filter((tag) => tag.length > 0);
+    const keywords = keywordsInput
+      .split(",")
+      .map((kw) => kw.trim())
+      .filter((kw) => kw.length > 0);
 
     try {
       const res = await fetch("/api/admin/faqs", {
@@ -59,16 +64,19 @@ export default function ManualFAQForm() {
           answer: answer.trim(),
           category,
           tags,
+          keywords,
+          isPublished,
         }),
       });
 
       const data = await res.json();
       if (res.ok && data.ok) {
-        toast.success("Manual FAQ entry created successfully!");
+        toast.success(isPublished ? "FAQ published successfully!" : "Draft saved successfully!");
         setQuestion("");
         setAnswer("");
         setCategory("");
         setTagsInput("");
+        setKeywordsInput("");
       } else {
         toast.error(data.error?.message ?? "Failed to create manual FAQ");
       }
@@ -162,25 +170,50 @@ export default function ManualFAQForm() {
               disabled={submitting}
             />
           </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2 text-foreground/95">
+              Keywords <span className="text-xs text-muted">(comma-separated)</span>
+            </label>
+            <input
+              type="text"
+              value={keywordsInput}
+              onChange={(e) => setKeywordsInput(e.target.value)}
+              placeholder="e.g. noc, objection certificate, permission"
+              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-muted"
+              disabled={submitting}
+            />
+          </div>
         </div>
 
-        <div className="pt-4 flex justify-end">
+        <div className="pt-4 flex gap-3 justify-end">
+          <button
+            type="button"
+            disabled={submitting || !question.trim() || !answer.trim() || !category}
+            onClick={(e) => {
+              e.preventDefault();
+              handleSubmit(e, false);
+            }}
+            className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-medium text-sm transition-all border border-border text-muted hover:text-foreground hover:border-muted disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {submitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
+            <span>Save as Draft</span>
+          </button>
           <button
             type="submit"
             disabled={submitting || !question.trim() || !answer.trim() || !category}
-            className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all bg-accent text-background hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-medium text-sm transition-all bg-accent text-background hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {submitting ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                <span>Creating...</span>
-              </>
+              <Loader2 size={16} className="animate-spin" />
             ) : (
-              <>
-                <PlusCircle size={16} />
-                <span>Create FAQ Entry</span>
-              </>
+              <PlusCircle size={16} />
             )}
+            <span>Publish</span>
           </button>
         </div>
       </form>
