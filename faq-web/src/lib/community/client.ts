@@ -13,6 +13,7 @@
 
 const STUDENT_KEY = "samagama_student_id";
 const ADMIN_KEY = "samagama_admin_key";
+const AUTH_TOKEN_KEY = "auth_token";
 
 /** Get or lazily create this browser's student id. */
 export function getStudentId(): string {
@@ -52,6 +53,15 @@ export async function api<T extends ApiEnvelope = ApiEnvelope>(
   headers.set("x-student-id", getStudentId());
   if (init.body) headers.set("content-type", "application/json");
   if (init.admin) headers.set("x-admin-key", getAdminKey());
+
+  // Attach JWT auth token so the server can identify the user's email
+  // for legacy question lookups (pending_questions collection).
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (token && !headers.has("authorization")) {
+      headers.set("authorization", "Bearer " + token);
+    }
+  }
 
   const res = await fetch(path, { ...init, headers });
   const data = (await res.json().catch(() => ({ ok: false }))) as T;

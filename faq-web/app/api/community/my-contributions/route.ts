@@ -70,9 +70,39 @@ export async function GET(req: NextRequest) {
     for (const q of qs) qTitles.set(String(q._id), q.title);
   }
 
-  const serializedCommunityQuestions = communityQuestions.map((q) =>
-    serializeQuestion(q as never)
-  );
+  // Fetch ALL answers to the user's questions (from other students) for notifications.
+  const myQuestionIds = communityQuestions.map((q) => q._id);
+  const answersToMyQuestions = myQuestionIds.length
+    ? await CommunityAnswer.find({
+        questionId: { $in: myQuestionIds },
+        authorStudentId: { $ne: student.studentId },
+        status: { $ne: "deleted" },
+      })
+        .sort({ createdAt: -1 })
+        .lean<ICommunityAnswer[]>()
+    : [];
+
+  // Group answers by questionId for notification building.
+  const answersByQuestion = new Map<string, ICommunityAnswer[]>();
+  for (const a of answersToMyQuestions) {
+    const qid = String(a.questionId);
+    if (!answersByQuestion.has(qid)) answersByQuestion.set(qid, []);
+    answersByQuestion.get(qid)!.push(a);
+  }
+
+  const serializedCommunityQuestions = communityQuestions.map((q) => ({
+    ...serializeQuestion(q as never),
+    // Attach answers from other students so the frontend can build reply notifications.
+    replies: (answersByQuestion.get(String(q._id)) ?? []).map((a) => ({
+      id: String(a._id),
+      author: a.authorStudentId,
+      authorEmail: a.authorEmail,
+      authorRole: "user" as const,
+      content: (a.body ?? "").slice(0, 100),
+      timestamp: String(a.createdAt),
+      status: a.status,
+    })),
+  }));
 
   const serializedCommunityAnswers = communityAnswers.map((a) => ({
     ...serializeAnswer(a as never, { studentId: student.studentId }),
@@ -103,6 +133,16 @@ export async function GET(req: NextRequest) {
 
 /** Serialize a PendingQuestion into the same shape as a QuestionDTO. */
 function serializePendingQuestion(q: IPendingQuestion & { _id: unknown }) {
+  // Count human replies (non-bot, non-rejected) as the answer count.
+  const humanReplies = (q.replies ?? []).filter(
+    (r) => r.authorRole !== "bot" && r.status !== "rejected"
+  );
+  const approvedHumanReplies = humanReplies.filter(
+    (r) => r.status === "approved" || r.status === undefined
+  );
+  // Include pending replies as well so the owner sees activity.
+  const replyCount = humanReplies.length;
+
   return {
     id: String(q._id),
     // PendingQuestion stores the full text in `question`; use first line as title.
@@ -112,13 +152,23 @@ function serializePendingQuestion(q: IPendingQuestion & { _id: unknown }) {
     status: mapPendingStatus(q.status),
     authorStudentId: "",
     acceptedAnswerId: null,
-    approvedAnswerCount: q.answer ? 1 : 0,
+    approvedAnswerCount: replyCount,
     viewCount: q.views ?? 0,
     voteScore: 0,
     lastActivityAt: q.updatedAt ?? q.createdAt,
     createdAt: q.createdAt,
     // Extra field so the UI can distinguish legacy questions (no /community/:id link).
     isLegacy: true,
+    // Include reply details so notifications can show who answered.
+    replies: humanReplies.map((r) => ({
+      id: r.id,
+      author: r.author,
+      authorEmail: r.authorEmail,
+      authorRole: r.authorRole,
+      content: r.content.slice(0, 100),
+      timestamp: r.timestamp,
+      status: r.status,
+    })),
   };
 }
 

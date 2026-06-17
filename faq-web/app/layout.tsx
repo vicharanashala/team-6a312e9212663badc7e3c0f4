@@ -46,7 +46,6 @@ export default function RootLayout({
                 padding: "12px 16px",
                 fontSize: "14px",
               },
-              },
               success: { iconTheme: { primary: "#22c55e", secondary: "#141414" } },
               error: { iconTheme: { primary: "#ef4444", secondary: "#141414" } },
             }}
