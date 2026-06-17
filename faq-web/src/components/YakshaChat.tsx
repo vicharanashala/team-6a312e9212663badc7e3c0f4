@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import React, { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Bot, User, Sparkles, Lightbulb, PlusCircle, ThumbsUp, ThumbsDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -382,9 +382,8 @@ export default function YakshaChat() {
               {messages.map((msg) => {
                 const extra = renderMsgExtra(msg);
                 return (
-                  <>
+                  <React.Fragment key={msg.id}>
                     <motion.div
-                      key={msg.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className={cn(
@@ -456,7 +455,7 @@ export default function YakshaChat() {
                       )}
                     </motion.div>
                     {extra}
-                  </>
+                  </React.Fragment>
                 );
               })}
 
