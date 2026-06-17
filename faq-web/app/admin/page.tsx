@@ -387,6 +387,9 @@ export default function AdminPage() {
     .sort((a, b) => b.value - a.value);
 
   const PIE_COLORS = ["#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ef4444", "#06b6d4", "#84cc16", "#ec4899"];
+  const categoryColorMap = Object.fromEntries(
+    chartData.map((d, i) => [d.name, PIE_COLORS[i % PIE_COLORS.length]])
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -551,9 +554,15 @@ export default function AdminPage() {
           >
             <h3 className="text-sm font-semibold mb-4">Questions by Category</h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={chartData}>
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#888" }} />
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 50 }}>
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 11, fill: "#888" }}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
                   <YAxis tick={{ fontSize: 11, fill: "#888" }} />
                   <Tooltip
                     contentStyle={{
@@ -715,7 +724,15 @@ export default function AdminPage() {
                             urgent
                           </span>
                         )}
-                        <span className="text-xs text-muted">{q.category}</span>
+                        <span
+                          className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                          style={{
+                            backgroundColor: (categoryColorMap[q.category] || "#888") + "20",
+                            color: categoryColorMap[q.category] || "#888",
+                          }}
+                        >
+                          {q.category}
+                        </span>
                         {q.status !== "pending" && (
                           <span
                             className={cn(

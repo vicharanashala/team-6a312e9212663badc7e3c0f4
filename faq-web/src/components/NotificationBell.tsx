@@ -9,7 +9,7 @@ import type { AnswerDTO, QuestionDTO } from "@/lib/community/types";
 
 interface Notification {
   id: string;
-  type: "answer_approved" | "answer_rejected" | "answer_voted" | "question_answered";
+  type: "answer_approved" | "answer_rejected" | "answer_voted" | "question_answered" | "new_reply";
   message: string;
   subtext: string;
   time: string;
@@ -17,8 +17,59 @@ interface Notification {
   href: string;
 }
 
-function buildNotifications(questions: QuestionDTO[], answers: AnswerDTO[]): Notification[] {
+interface ReplyInfo {
+  id: string;
+  author: string;
+  authorEmail?: string;
+  authorRole?: string;
+  content: string;
+  timestamp: string;
+  status?: string;
+}
+
+function buildNotifications(
+  questions: (QuestionDTO & { replies?: ReplyInfo[] })[],
+  answers: AnswerDTO[]
+): Notification[] {
   const notifications: Notification[] = [];
+
+  // Build individual reply notifications for each question.
+  questions.forEach((q) => {
+    const replies = q.replies ?? [];
+    replies.forEach((r) => {
+      // Skip bot replies and rejected replies.
+      if (r.authorRole === "bot" || r.status === "rejected") return;
+
+      const authorName = r.authorEmail
+        ? r.authorEmail.split("@")[0]
+        : r.author?.slice(0, 12) || "Someone";
+
+      notifications.push({
+        id: "reply-" + r.id,
+        type: "new_reply",
+        message: (q.title ?? "Your question").slice(0, 40),
+        subtext: authorName + " replied to your question",
+        time: r.timestamp
+          ? formatTimeAgo(new Date(r.timestamp))
+          : "Recently",
+        read: false,
+        href: "/community/" + q.id,
+      });
+    });
+
+    // Also show the aggregate "Got N answer(s)" if there are approved answers.
+    if (q.approvedAnswerCount && q.approvedAnswerCount > 0) {
+      notifications.push({
+        id: "qanswered-" + q.id,
+        type: "question_answered",
+        message: (q.title ?? "Your question").slice(0, 40) + "...",
+        subtext: "Got " + q.approvedAnswerCount + " answer" + (q.approvedAnswerCount > 1 ? "s" : ""),
+        time: "Recently",
+        read: false,
+        href: "/community/" + q.id,
+      });
+    }
+  });
 
   answers.forEach((a) => {
     if (a.status === "approved") {
@@ -56,21 +107,21 @@ function buildNotifications(questions: QuestionDTO[], answers: AnswerDTO[]): Not
     }
   });
 
-  questions.forEach((q) => {
-    if (q.approvedAnswerCount && q.approvedAnswerCount > 0) {
-      notifications.push({
-        id: "qanswered-" + q.id,
-        type: "question_answered",
-        message: (q.title ?? "Your question").slice(0, 40) + "...",
-        subtext: "Got " + q.approvedAnswerCount + " answer" + (q.approvedAnswerCount > 1 ? "s" : ""),
-        time: "Recently",
-        read: false,
-        href: "/community/" + q.id,
-      });
-    }
-  });
-
   return notifications;
+}
+
+function formatTimeAgo(date: Date): string {
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + "m ago";
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + "h ago";
+  const days = Math.floor(hours / 24);
+  if (days < 7) return days + "d ago";
+  return date.toLocaleDateString();
 }
 
 const iconMap: Record<Notification["type"], React.ReactElement> = {
@@ -78,6 +129,7 @@ const iconMap: Record<Notification["type"], React.ReactElement> = {
   answer_rejected: <X size={16} className="text-danger" />,
   answer_voted: <ThumbsUp size={16} className="text-accent" />,
   question_answered: <MessageSquare size={16} className="text-accent" />,
+  new_reply: <MessageSquare size={16} className="text-blue-400" />,
 };
 
 export default function NotificationBell() {
@@ -112,7 +164,7 @@ export default function NotificationBell() {
         const res = await api("/api/community/my-contributions");
         if (res.ok) {
           const notifs = buildNotifications(
-            (res.questions as QuestionDTO[]) ?? [],
+            (res.questions as (QuestionDTO & { replies?: ReplyInfo[] })[]) ?? [],
             (res.answers as AnswerDTO[]) ?? []
           );
           setNotifications(notifs);
@@ -129,7 +181,7 @@ export default function NotificationBell() {
         const res = await api("/api/community/my-contributions");
         if (res.ok && mounted) {
           const notifs = buildNotifications(
-            (res.questions as QuestionDTO[]) ?? [],
+            (res.questions as (QuestionDTO & { replies?: ReplyInfo[] })[]) ?? [],
             (res.answers as AnswerDTO[]) ?? []
           );
           setNotifications(notifs);
@@ -234,10 +286,15 @@ export default function NotificationBell() {
                 notifications.map((n) => {
                   const isRead = readIds.has(n.id);
                   return (
-                    <div
+                    <a
                       key={n.id}
+                      href={n.href}
+                      onClick={() => {
+                        markRead(n.id);
+                        setOpen(false);
+                      }}
                       className={cn(
-                        "flex items-start gap-3 px-4 py-3 border-b border-border last:border-0",
+                        "flex items-start gap-3 px-4 py-3 border-b border-border last:border-0 cursor-pointer hover:bg-accent/5 transition-colors",
                         !isRead && "bg-accent/5"
                       )}
                     >
@@ -261,14 +318,18 @@ export default function NotificationBell() {
                       {/* Read button */}
                       {!isRead && (
                         <button
-                          onClick={() => markRead(n.id)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            markRead(n.id);
+                          }}
                           className="shrink-0 flex items-center gap-1 text-[11px] border border-border rounded-lg px-2 py-1 hover:bg-card-hover transition-colors text-muted"
                         >
                           <CheckCircle size={11} />
                           Read
                         </button>
                       )}
-                    </div>
+                    </a>
                   );
                 })
               )}
