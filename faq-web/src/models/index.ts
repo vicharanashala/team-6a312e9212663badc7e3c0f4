@@ -48,3 +48,7 @@ export type { ICommunityReport, ReportReason } from "./CommunityReport";
 // ─── Admin user model ────────────────────────────────────────────────────────
 export { default as AdminUser } from "./AdminUser";
 export type { IAdminUser, AdminRole } from "./AdminUser";
+
+// ─── Announcement model (admin broadcasts) ──────────────────────────────────
+export { default as Announcement } from "./Announcement";
+export type { IAnnouncement } from "./Announcement";
