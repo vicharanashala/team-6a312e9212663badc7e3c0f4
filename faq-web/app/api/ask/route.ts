@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
     category?: unknown;
     email?: unknown;
     priority?: unknown;
+    images?: unknown;
   }>(req);
 
   if (!body) return errors.badRequest("Invalid JSON body");
@@ -52,6 +53,14 @@ export async function POST(req: NextRequest) {
   const priority =
     body.priority === "urgent" ? ("urgent" as const) : ("normal" as const);
 
+  // Validate images (optional, max 5, base64 data URLs only)
+  let images: string[] = [];
+  if (Array.isArray(body.images)) {
+    images = body.images
+      .filter((img): img is string => typeof img === "string" && img.startsWith("data:image/"))
+      .slice(0, 5);
+  }
+
   // ── Step 1: Persist via native MongoDB driver (insertOne) ─────────────────
   const client = await ConnectDB();
   const db = client.db(DB_NAME);
@@ -61,6 +70,7 @@ export async function POST(req: NextRequest) {
     category,
     email,
     priority,
+    images: images.length > 0 ? images : [],
     // "pending" = received, not yet validated by RAG.
     status: "pending",
     answer: null,

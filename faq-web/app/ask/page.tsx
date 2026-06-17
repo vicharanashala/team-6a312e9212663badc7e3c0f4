@@ -1,19 +1,18 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { motion } from "framer-motion";
 import Header from "@/components/Header";
 import YakshaChat from "@/components/YakshaChat";
 import type { FAQ, Category } from "@/data/faqData";
-import Fuse from "fuse.js";
 import FAQSuggestionBox from "@/components/FAQSuggestionBox";
 import {
   Send,
-  Lightbulb,
   CheckCircle,
   AlertCircle,
-  ArrowRight,
   Mail,
+  ImagePlus,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +26,9 @@ export default function AskPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [priority, setPriority] = useState<"normal" | "urgent">("normal");
+  const [images, setImages] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -44,38 +46,65 @@ export default function AskPage() {
     void load();
   }, []);
 
-  const fuse = useMemo(
-    () =>
-      new Fuse(faqData, {
-        keys: ["question", "answer", "tags"],
-        threshold: 0.4,
-        includeScore: true,
-      }),
-    [faqData]
-  );
+  const handleImages = (files: FileList | null) => {
+    if (!files) return;
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    setImages((prev) => [...prev, ...imageFiles].slice(0, 5));
+  };
 
-  // Real-time duplicate detection
-  const suggestions = useMemo(() => {
-    if (question.length < 5) return [];
-    return fuse.search(question).slice(0, 3);
-  }, [question, fuse]);
+  const removeImage = (index: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    handleImages(e.dataTransfer.files);
+  }, []);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const onDragLeave = useCallback(() => setDragOver(false), []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
-    if (!category) { setSubmitError("Please select a category."); return; }
+    if (!category) {
+      setSubmitError("Please select a category.");
+      return;
+    }
     setSubmitError("");
     setSubmitting(true);
 
     try {
+      // Convert images to base64 data URLs
+      const imagePromises = images.map((file) =>
+        new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        })
+      );
+      const imageDataUrls = await Promise.all(imagePromises);
+
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: question.trim(), category, email, priority }),
+        body: JSON.stringify({
+          question: question.trim(),
+          category,
+          email,
+          priority,
+          images: imageDataUrls.length > 0 ? imageDataUrls : undefined,
+        }),
       });
       const data = await res.json().catch(() => ({ ok: false }));
       if (data.ok) {
         setSubmitted(true);
+        setImages([]);
       } else {
         setSubmitError(data.error?.message ?? "Something went wrong. Please try again.");
       }
@@ -187,65 +216,24 @@ export default function AskPage() {
               />
             </div>
 
-            {/* Smart Suggestions */}
-            <AnimatePresence>
-              {suggestions.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="rounded-xl border border-accent/30 bg-accent/5 p-4"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <Lightbulb size={16} className="text-accent" />
-                    <span className="text-sm font-medium text-accent">
-                      Similar questions already answered:
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {suggestions.map((s) => (
-                      <a
-                        key={s.item.id}
-                        href={`/#faq-${s.item.id}`}
-                        className="flex items-center gap-2 p-2.5 rounded-lg bg-background/50 hover:bg-background border border-border/50 transition-all group"
-                      >
-                        <span className="text-xs font-mono text-accent">
-                          {s.item.id}
-                        </span>
-                        <span className="flex-1 text-sm text-foreground/80 group-hover:text-foreground">
-                          {s.item.question}
-                        </span>
-                        <ArrowRight
-                          size={14}
-                          className="text-muted group-hover:text-accent transition-colors"
-                        />
-                      </a>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted mt-3">
-                    If none of these answer your question, continue submitting
-                    below.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {/* Category */}
             <div>
               <label className="block text-sm font-medium mb-2">
-                Category
+                Category *
               </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
+                required
                 className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors appearance-none"
               >
-                <option value="">Select a category *</option>
+                <option value="">Select a category</option>
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.name}>
                     {cat.icon} {cat.name}
                   </option>
                 ))}
+                <option value="Others"> Others</option>
               </select>
             </div>
 
@@ -295,6 +283,61 @@ export default function AskPage() {
                   Urgent
                 </button>
               </div>
+            </div>
+
+            {/* Image Upload */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Attach Images <span className="text-muted">(optional, max 5)</span>
+              </label>
+              <div
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onClick={() => fileInputRef.current?.click()}
+                className={cn(
+                  "relative border-2 border-dashed rounded-xl px-4 py-6 text-center cursor-pointer transition-all",
+                  dragOver
+                    ? "border-accent bg-accent/5"
+                    : "border-border hover:border-accent/50 hover:bg-card/50"
+                )}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => handleImages(e.target.files)}
+                  className="hidden"
+                />
+                <ImagePlus size={24} className="mx-auto mb-2 text-muted" />
+                <p className="text-sm text-muted">
+                  Drag & drop images here or <span className="text-accent">browse</span>
+                </p>
+                <p className="text-xs text-muted/60 mt-1">PNG, JPG, GIF up to 5MB each</p>
+              </div>
+
+              {/* Image previews */}
+              {images.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {images.map((file, i) => (
+                    <div key={i} className="relative group">
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={`Upload ${i + 1}`}
+                        className="w-16 h-16 rounded-lg object-cover border border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(i)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-danger text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Error banner */}
