@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import popularsearchers from "@/components/community/popularsearchers";
 import {
   MessageSquare,
   MessageCircle,
@@ -42,9 +43,12 @@ import {
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Header from "@/components/Header";
+import { CommunityPageSkeleton } from "@/components/Skeletons";
 import YakshaChat from "@/components/YakshaChat";
 import StatusBadge from "@/components/community/StatusBadge";
+import PopularSearches from "@/components/community/popularsearchers";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 import type { Thread, Reply, ReplySource } from "@/lib/community/threadModel";
 
 // ---------------------------------------------------------------------------
@@ -104,6 +108,9 @@ function ReplyCard({ reply }: { reply: Reply }) {
 
   const statusBadgeStatus = reply.status === "pending" ? "pending_review" : reply.status;
 
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reply.author);
+  const displayName = isUuid || reply.author === "anonymous" ? "Anonymous Student" : reply.author;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -128,7 +135,7 @@ function ReplyCard({ reply }: { reply: Reply }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-sm font-semibold">{reply.author}</span>
+            <span className="text-sm font-semibold">{displayName}</span>
             <span
               className={cn(
                 "text-xs px-1.5 py-0.5 rounded-full font-medium",
@@ -295,6 +302,7 @@ function BotReplyCard({ reply }: { reply: Reply }) {
 // ---------------------------------------------------------------------------
 
 function QuestionCard({ thread: initialThread }: { thread: Thread }) {
+  const { user } = useAuth();
   const [thread, setThread] = useState(initialThread);
   const [expanded, setExpanded] = useState(false);
   const [replyText, setReplyText] = useState("");
@@ -313,12 +321,21 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
     const content = replyText.trim();
     if (!content || submitting) return;
 
+    if (!user?.email) {
+      toast.error("Please sign in to post a reply.");
+      return;
+    }
+
     setSubmitting(true);
     try {
+      const studentId = localStorage.getItem("samagama_student_id") || "";
       const res = await fetch(`/api/community/questions/${thread.id}/answers`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: content }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-student-id": studentId,
+        },
+        body: JSON.stringify({ body: content, email: user.email }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -326,10 +343,11 @@ function QuestionCard({ thread: initialThread }: { thread: Thread }) {
       }
 
       // Map answer→reply shape so the UI stays consistent.
-      const saved = json.answer as { id: string; author: string; authorRole: "user"; body: string; timestamp: string; likes: number; status: string };
+      const saved = json.answer as { id: string; author: string; authorEmail?: string; authorRole: "user"; body: string; timestamp: string; likes: number; status: string };
       const newReply: Reply = {
         id: saved.id,
         author: saved.author,
+        authorEmail: saved.authorEmail,
         authorRole: saved.authorRole,
         content: saved.body,
         timestamp: saved.timestamp,
@@ -587,6 +605,27 @@ export default function CommunityHome() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<string>("recent");
   const [category, setCategory] = useState<string | null>(null);
+  useEffect(() => {
+  if (!query.trim()) return;
+
+  const timer = setTimeout(async () => {
+    try {
+      await fetch("/api/search/track", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: query.trim(),
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to track search", err);
+    }
+  }, 1500);
+
+  return () => clearTimeout(timer);
+}, [query]);
 
   // Fetch threads from the database (GET /api/community/threads).
   useEffect(() => {
@@ -719,6 +758,7 @@ export default function CommunityHome() {
               className="w-full bg-card border border-border rounded-xl pl-11 pr-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-muted"
             />
           </motion.div>
+          <PopularSearches onSelect={setQuery} />
         </div>
       </section>
 
@@ -775,15 +815,8 @@ export default function CommunityHome() {
         </div>
 
         {/* Question list */}
-        {loading ? (
-          <div className="space-y-4">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-40 rounded-2xl border border-border bg-card animate-pulse"
-              />
-            ))}
-          </div>
+          {loading ? (
+  <CommunityPageSkeleton />
         ) : error ? (
           <div className="py-16 text-center">
             <MessageSquare

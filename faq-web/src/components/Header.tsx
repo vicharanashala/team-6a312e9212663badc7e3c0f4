@@ -1,9 +1,11 @@
 "use client";
+import { useTheme } from "./ThemeProvider";
+import NotificationBell from "./NotificationBell";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessageCircle, HelpCircle, Menu, X, MessageSquare, Shield, User, Info } from "lucide-react";
+import { MessageCircle, HelpCircle, Menu, X, MessageSquare, Shield, User, Info, Sun, Moon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
@@ -20,9 +22,10 @@ const navLinks = [
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   // Only render auth-dependent UI on the client to avoid SSR/client mismatch.
   useEffect(() => { setMounted(true); }, []);
@@ -48,7 +51,7 @@ export default function Header() {
 
           {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => {
+            {navLinks.filter((link) => link.href !== "/admin" || role === "admin").map((link) => {
               const isActive = pathname === link.href;
               const Icon = link.icon;
               return (
@@ -87,15 +90,52 @@ export default function Header() {
               </span>
             )}
           </div>
+          {/* Right side actions */}
+          <div className="flex items-center gap-2">
+            <NotificationBell />
 
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
-            aria-label="Toggle menu"
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg hover:bg-card transition-colors"
+              aria-label="Toggle theme"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                {theme === "dark" ? (
+                  <motion.span
+                    key="sun"
+                    initial={{ rotate: -90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: 90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Sun size={18} className="text-muted" />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="moon"
+                    initial={{ rotate: 90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: -90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Moon size={18} className="text-muted" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+
+            <span className="hidden md:inline-flex text-xs text-muted bg-card px-2.5 py-1 rounded-full border border-border">
+              v2.0.0
+            </span>
+
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="md:hidden p-2 rounded-lg hover:bg-card transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -109,7 +149,7 @@ export default function Header() {
             className="md:hidden border-t border-border bg-background"
           >
             <nav className="px-4 py-3 space-y-1">
-              {navLinks.map((link) => {
+              {navLinks.filter((link) => link.href !== "/admin" || role === "admin").map((link) => {
                 const isActive = pathname === link.href;
                 const Icon = link.icon;
                 return (

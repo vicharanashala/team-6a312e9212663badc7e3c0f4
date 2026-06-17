@@ -2,10 +2,28 @@
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, X, Send, Bot, User, Sparkles, Lightbulb, PlusCircle } from "lucide-react";
+import { MessageCircle, X, Send, Bot, User, Sparkles, Lightbulb, PlusCircle, ThumbsUp, ThumbsDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const RAG_BASE = process.env.NEXT_PUBLIC_RAG_API ?? "http://localhost:8000";
+
+// Markdown components styling tailored for YakshaChat bubble size
+const mdComponents: React.ComponentProps<typeof Markdown>["components"] = {
+  h1: ({ children }) => <h1 className="text-sm font-bold mt-2 mb-1">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-xs font-semibold mt-1.5 mb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-xs font-semibold mt-1 mb-0.5">{children}</h3>,
+  p: ({ children }) => <p className="text-sm leading-relaxed my-1">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc list-inside my-1 space-y-0.5 text-sm">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal list-inside my-1 space-y-0.5 text-sm">{children}</ol>,
+  li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-extrabold text-accent tracking-tight">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{children}</a>
+  ),
+};
 
 interface SourceDoc {
   title: string;
@@ -29,6 +47,8 @@ interface Message {
   sources?: string[];
   showSubmitPrompt?: boolean;
   submittedForFaq?: boolean;
+  feedback?: "up" | "down";
+  confidence?: number;
 }
 
 const MIN_W = 300, MAX_W = 700, MIN_H = 400, MAX_H = 800;
@@ -186,6 +206,7 @@ export default function YakshaChat() {
           (s) => `${s.title} (${s.section})`
         ),
         showSubmitPrompt,
+        confidence,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setRagStatus("online");
@@ -239,6 +260,39 @@ export default function YakshaChat() {
       }
     } catch {
       console.error("[YakshaChat] Failed to submit question for FAQ review");
+    }
+  };
+
+  const handleFeedback = async (msgId: string, type: "up" | "down") => {
+    const msgIndex = messages.findIndex((m) => m.id === msgId);
+    if (msgIndex === -1) return;
+    const assistantMsg = messages[msgIndex];
+    // Find the preceding user message to capture the exact question
+    const userMsg = messages
+      .slice(0, msgIndex)
+      .reverse()
+      .find((m) => m.role === "user");
+    if (!userMsg) return;
+
+    // Update UI state immediately
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, feedback: type } : m))
+    );
+
+    try {
+      await fetch("/api/chat-feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: userMsg.content,
+          answer: assistantMsg.content,
+          feedback: type,
+          sources: assistantMsg.sources || [],
+          confidence: assistantMsg.confidence || 0.0,
+        }),
+      });
+    } catch (err) {
+      console.error("[YakshaChat] Failed to submit feedback:", err);
     }
   };
 
@@ -351,7 +405,13 @@ export default function YakshaChat() {
                             : "bg-card border border-border rounded-bl-md"
                         )}
                       >
-                        <p className="whitespace-pre-line">{msg.content}</p>
+                        {msg.role === "user" ? (
+                          <p className="whitespace-pre-line">{msg.content}</p>
+                        ) : (
+                          <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                            {msg.content}
+                          </Markdown>
+                        )}
                         {msg.sources && msg.sources.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-border/50">
                             <p className="text-xs text-muted mb-1">Sources:</p>
@@ -360,6 +420,32 @@ export default function YakshaChat() {
                                 {s}
                               </p>
                             ))}
+                          </div>
+                        )}
+                        {msg.role === "assistant" && msg.id !== "welcome" && (
+                          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20 justify-end text-muted-foreground">
+                            <button
+                              onClick={() => handleFeedback(msg.id, "up")}
+                              disabled={msg.feedback !== undefined}
+                              className={cn(
+                                "p-1 rounded hover:bg-accent/10 transition-colors",
+                                msg.feedback === "up" && "text-success bg-success/15 hover:bg-success/20"
+                              )}
+                              title="Helpful"
+                            >
+                              <ThumbsUp size={14} className={msg.feedback === "up" ? "fill-success" : ""} />
+                            </button>
+                            <button
+                              onClick={() => handleFeedback(msg.id, "down")}
+                              disabled={msg.feedback !== undefined}
+                              className={cn(
+                                "p-1 rounded hover:bg-accent/10 transition-colors",
+                                msg.feedback === "down" && "text-danger bg-danger/15 hover:bg-danger/20"
+                              )}
+                              title="Not helpful"
+                            >
+                              <ThumbsDown size={14} className={msg.feedback === "down" ? "fill-danger" : ""} />
+                            </button>
                           </div>
                         )}
                       </div>
