@@ -2,14 +2,14 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, CheckCircle, MessageSquare, ThumbsUp, X } from "lucide-react";
+import { Bell, CheckCircle, MessageSquare, ThumbsUp, X, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/community/client";
 import type { AnswerDTO, QuestionDTO } from "@/lib/community/types";
 
 interface Notification {
   id: string;
-  type: "answer_approved" | "answer_rejected" | "answer_voted" | "question_answered" | "new_reply";
+  type: "answer_approved" | "answer_rejected" | "answer_voted" | "question_answered" | "new_reply" | "announcement";
   message: string;
   subtext: string;
   time: string;
@@ -124,12 +124,33 @@ function formatTimeAgo(date: Date): string {
   return date.toLocaleDateString();
 }
 
+interface AnnouncementData {
+  _id: string;
+  title: string;
+  message: string;
+  priority: string;
+  createdAt: string;
+}
+
+function buildAnnouncementNotifications(announcements: AnnouncementData[]): Notification[] {
+  return announcements.map((a) => ({
+    id: "ann-" + a._id,
+    type: "announcement" as const,
+    message: a.title.slice(0, 40),
+    subtext: a.message.slice(0, 80) + (a.message.length > 80 ? "..." : ""),
+    time: a.createdAt ? formatTimeAgo(new Date(a.createdAt)) : "Recently",
+    read: false,
+    href: "/community",
+  }));
+}
+
 const iconMap: Record<Notification["type"], React.ReactElement> = {
   answer_approved: <CheckCircle size={16} className="text-success" />,
   answer_rejected: <X size={16} className="text-danger" />,
   answer_voted: <ThumbsUp size={16} className="text-accent" />,
   question_answered: <MessageSquare size={16} className="text-accent" />,
   new_reply: <MessageSquare size={16} className="text-blue-400" />,
+  announcement: <Megaphone size={16} className="text-amber-400" />,
 };
 
 export default function NotificationBell() {
@@ -161,14 +182,25 @@ export default function NotificationBell() {
     setLoading(true);
     (async () => {
       try {
-        const res = await api("/api/community/my-contributions");
-        if (res.ok) {
-          const notifs = buildNotifications(
-            (res.questions as (QuestionDTO & { replies?: ReplyInfo[] })[]) ?? [],
-            (res.answers as AnswerDTO[]) ?? []
+        const [contribRes, annRes] = await Promise.all([
+          api("/api/community/my-contributions"),
+          fetch("/api/community/announcements").then((r) => r.json()).catch(() => ({ ok: false, announcements: [] })),
+        ]);
+        const notifs: Notification[] = [];
+        if (contribRes.ok) {
+          notifs.push(
+            ...buildNotifications(
+              (contribRes.questions as (QuestionDTO & { replies?: ReplyInfo[] })[]) ?? [],
+              (contribRes.answers as AnswerDTO[]) ?? []
+            )
           );
-          setNotifications(notifs);
         }
+        if (annRes.ok) {
+          notifs.push(
+            ...buildAnnouncementNotifications(annRes.announcements ?? [])
+          );
+        }
+        setNotifications(notifs);
       } catch {}
       setLoading(false);
     })();
@@ -178,12 +210,25 @@ export default function NotificationBell() {
     let mounted = true;
     (async () => {
       try {
-        const res = await api("/api/community/my-contributions");
-        if (res.ok && mounted) {
-          const notifs = buildNotifications(
-            (res.questions as (QuestionDTO & { replies?: ReplyInfo[] })[]) ?? [],
-            (res.answers as AnswerDTO[]) ?? []
-          );
+        const [contribRes, annRes] = await Promise.all([
+          api("/api/community/my-contributions"),
+          fetch("/api/community/announcements").then((r) => r.json()).catch(() => ({ ok: false, announcements: [] })),
+        ]);
+        if (mounted) {
+          const notifs: Notification[] = [];
+          if (contribRes.ok) {
+            notifs.push(
+              ...buildNotifications(
+                (contribRes.questions as (QuestionDTO & { replies?: ReplyInfo[] })[]) ?? [],
+                (contribRes.answers as AnswerDTO[]) ?? []
+              )
+            );
+          }
+          if (annRes.ok) {
+            notifs.push(
+              ...buildAnnouncementNotifications(annRes.announcements ?? [])
+            );
+          }
           setNotifications(notifs);
         }
       } catch {}

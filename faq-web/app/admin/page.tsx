@@ -62,7 +62,7 @@ export default function AdminPage() {
   const [answer, setAnswer] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "urgent" | "rejected">("all");
   const [submitting, setSubmitting] = useState(false);
-  const [tab, setTab] = useState<"questions" | "faq_suggestions" | "manual_faq" | "chat_feedback" | "live_faqs">("questions");
+  const [tab, setTab] = useState<"questions" | "faq_suggestions" | "manual_faq" | "chat_feedback" | "live_faqs" | "announcements">("questions");
   const [promoteModalOpen, setPromoteModalOpen] = useState(false);
   const [promoteCategoryId, setPromoteCategoryId] = useState(1);
   const [promoteTags, setPromoteTags] = useState("");
@@ -88,6 +88,22 @@ export default function AdminPage() {
     createdAt: string;
   }
   const [feedbacks, setFeedbacks] = useState<ChatFeedback[]>([]);
+
+  // Announcements state
+  interface Announcement {
+    _id: string;
+    title: string;
+    message: string;
+    priority: "normal" | "important" | "urgent";
+    createdBy: string;
+    createdAt: string;
+  }
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementMessage, setAnnouncementMessage] = useState("");
+  const [announcementPriority, setAnnouncementPriority] = useState<"normal" | "important" | "urgent">("normal");
+  const [announcementLoading, setAnnouncementLoading] = useState(false);
+  const [announcementListLoading, setAnnouncementListLoading] = useState(false);
 
   const loadQuestions = useCallback(async () => {
     setLoading(true);
@@ -490,6 +506,18 @@ export default function AdminPage() {
             <BookText size={14} />
             Live FAQs
           </button>
+          <button
+            onClick={() => { setTab("announcements"); setSelectedQuestion(null); }}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              tab === "announcements"
+                ? "bg-accent text-background"
+                : "text-muted hover:text-foreground"
+            )}
+          >
+            <Mail size={14} />
+            Announcements
+          </button>
         </div>
 
         {/* Stats (questions tab only) */}
@@ -609,7 +637,7 @@ export default function AdminPage() {
         )}
 
         {/* Questions Grid (Questions + FAQ Suggestions tabs) */}
-        {tab !== "manual_faq" && tab !== "live_faqs" && (
+        {tab !== "manual_faq" && tab !== "live_faqs" && tab !== "announcements" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Question List */}
           <div className="space-y-3">
@@ -973,6 +1001,24 @@ export default function AdminPage() {
 
         {/* Live FAQs Tab */}
         {tab === "live_faqs" && <LiveFaqstab />}
+
+        {/* Announcements Tab */}
+        {tab === "announcements" && (
+          <AnnouncementTab
+            announcements={announcements}
+            setAnnouncements={setAnnouncements}
+            title={announcementTitle}
+            setTitle={setAnnouncementTitle}
+            message={announcementMessage}
+            setMessage={setAnnouncementMessage}
+            priority={announcementPriority}
+            setPriority={setAnnouncementPriority}
+            loading={announcementLoading}
+            setLoading={setAnnouncementLoading}
+            listLoading={announcementListLoading}
+            setListLoading={setAnnouncementListLoading}
+          />
+        )}
       </main>
 
       {/* Promote to FAQ Modal */}
@@ -1067,6 +1113,204 @@ export default function AdminPage() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Announcement Tab Component ──────────────────────────────────────────────
+
+function AnnouncementTab({
+  announcements,
+  setAnnouncements,
+  title,
+  setTitle,
+  message,
+  setMessage,
+  priority,
+  setPriority,
+  loading,
+  setLoading,
+  listLoading,
+  setListLoading,
+}: {
+  announcements: { _id: string; title: string; message: string; priority: string; createdBy: string; createdAt: string }[];
+  setAnnouncements: (a: { _id: string; title: string; message: string; priority: string; createdBy: string; createdAt: string }[]) => void;
+  title: string;
+  setTitle: (t: string) => void;
+  message: string;
+  setMessage: (m: string) => void;
+  priority: "normal" | "important" | "urgent";
+  setPriority: (p: "normal" | "important" | "urgent") => void;
+  loading: boolean;
+  setLoading: (l: boolean) => void;
+  listLoading: boolean;
+  setListLoading: (l: boolean) => void;
+}) {
+  const priorityColors = {
+    normal: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    important: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    urgent: "bg-red-500/15 text-red-400 border-red-500/30",
+  };
+
+  // Load announcements on mount
+  useEffect(() => {
+    setListLoading(true);
+    fetch("/api/admin/announcements", {
+      headers: { "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin" },
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setAnnouncements(d.announcements); })
+      .catch(() => {})
+      .finally(() => setListLoading(false));
+  }, [setListLoading, setAnnouncements]);
+
+  async function handlePost() {
+    if (!title.trim() || !message.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/announcements", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": localStorage.getItem("samagama_admin_key") ?? "dev-admin",
+        },
+        body: JSON.stringify({ title: title.trim(), message: message.trim(), priority }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setAnnouncements([data.announcement, ...announcements]);
+        setTitle("");
+        setMessage("");
+        setPriority("normal");
+        toast.success("Announcement posted!");
+      } else {
+        toast.error(data.error?.message ?? "Failed to post");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    // Optimistic remove
+    setAnnouncements(announcements.filter((a) => a._id !== id));
+    // TODO: add DELETE endpoint if needed
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8 rounded-xl border border-border bg-card p-6"
+      >
+        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+          <Mail size={16} className="text-accent" />
+          Post Announcement
+        </h3>
+        <p className="text-xs text-muted mb-4">
+          This will be visible to all students in their notification bell.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium mb-1.5">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Deadline Extended, New Feature Released..."
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-muted"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1.5">Message</label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Write the announcement details..."
+              rows={4}
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-accent transition-colors placeholder:text-muted resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1.5">Priority</label>
+            <div className="flex gap-2">
+              {(["normal", "important", "urgent"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPriority(p)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize",
+                    priority === p
+                      ? priorityColors[p]
+                      : "border-border text-muted hover:text-foreground"
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={handlePost}
+            disabled={loading || !title.trim() || !message.trim()}
+            className={cn(
+              "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all",
+              !loading && title.trim() && message.trim()
+                ? "bg-accent text-background hover:bg-accent-hover"
+                : "bg-card border border-border text-muted cursor-not-allowed"
+            )}
+          >
+            <Send size={14} />
+            {loading ? "Posting..." : "Post Announcement"}
+          </button>
+        </div>
+      </motion.div>
+
+      {/* Existing Announcements */}
+      <div>
+        <h3 className="text-sm font-semibold mb-4">Posted Announcements</h3>
+        {listLoading ? (
+          <div className="text-center py-8 text-muted text-sm">Loading...</div>
+        ) : announcements.length === 0 ? (
+          <div className="text-center py-12 text-muted text-sm">No announcements yet</div>
+        ) : (
+          <div className="space-y-3">
+            {announcements.map((a) => (
+              <motion.div
+                key={a._id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl border border-border bg-card p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={cn(
+                        "text-[10px] px-2 py-0.5 rounded-full font-semibold border uppercase",
+                        priorityColors[a.priority as keyof typeof priorityColors]
+                      )}>
+                        {a.priority}
+                      </span>
+                      <span className="text-[10px] text-muted">
+                        {new Date(a.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold mb-1">{a.title}</p>
+                    <p className="text-xs text-muted leading-relaxed whitespace-pre-line">{a.message}</p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
